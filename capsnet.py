@@ -113,6 +113,13 @@ def squash(s):
 
 
 """
+softmax function (Eqn. 3)
+"""
+def softmax(b):
+    return tf.exp(b) / tf.reduce_sum(tf.exp(b))
+
+
+"""
 Custom weight initializer
 
 https://keras.io/api/layers/initializers/#creating-custom-initializers
