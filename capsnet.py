@@ -13,6 +13,8 @@ implementation works well and that dynamic routing helps.'
     - Hinton, Sabour, Frosst
 """
 
+# TODO: testing suite
+
 import keras.backend as K
 from keras import initializers, layers
 import tensorflow as tf
@@ -80,7 +82,9 @@ class CapsuleLayer(layers.Layer):
         # TODO: implement call method for custom Keras layer
         # First multiply weight matrix and inputs
         u_hat = tf.matmul(self.weights, input_data)
-        pass
+
+        # apply routing algorithm
+        return self.routing(u_hat)
 
     """
     compute_output_shape method for custom Keras layer
@@ -89,8 +93,27 @@ class CapsuleLayer(layers.Layer):
         # TODO: implement compute_output_shape method for custom Keras layer
         pass
 
+    """
+    routing algorithm described on p.3 (Procedure 1)
+    """
     def routing(self, inputs):
-        pass
+        logits = tf.zeros(self.input_num_capsules)
+
+        for r in range(self.num_routings):
+            # for all capsules i in input layer, calculate the softmax
+            coupling_coeff = softmax(logits)
+
+            # for all capsules j in current layer, calculate sj
+            # TODO: find axis
+            s = tf.reduce_sum(tf.matmul(coupling_coeff, inputs))
+
+            # squash s
+            v = squash(s)
+
+            # update logits
+            logits = logits + tf.matmul(inputs, v)
+
+        return v
 
 
 """
@@ -116,7 +139,23 @@ def squash(s):
 softmax function (Eqn. 3)
 """
 def softmax(b):
-    return tf.exp(b) / tf.reduce_sum(tf.exp(b))
+    return tf.exp(b) / tf.reduce_sum(tf.exp(b), axis=-1, keepdims=True)
+
+
+"""
+Margin loss for digit existence (p. 3)
+
+implementation of loss function described in section 3
+"""
+def margin_loss(vk, tk):
+    # loss function variables
+    m_plus = 0.9
+    m_minus = 0.1
+    lbda = 0.5
+
+    # tk = 1 if the digit is present, 0 otherwise
+    return tk * tf.square(max(0, m_plus - tf.norm(vk))) \
+           + lbda * (1 - tk) * tf.square(max(0, tf.norm(vk) - m_minus))
 
 
 """
