@@ -26,9 +26,12 @@ https://www.tutorialspoint.com/keras/keras_customized_layer.htm
 """
 class CapsuleLayer(layers.Layer):
 
-    def __init__(self, num_capsules, capsule_dimension, num_routings, **kwargs):
+    def __init__(self, num_capsules, capsule_dimension, num_routings=3, **kwargs):
         self.num_capsules = num_capsules
         self.capsule_dimension = capsule_dimension
+        # route at least once
+        if num_routings < 1:
+            num_routings = 1
         self.num_routings = num_routings
         super(CapsuleLayer, self).__init__(**kwargs)
 
@@ -55,8 +58,8 @@ class CapsuleLayer(layers.Layer):
         # W * i -> [on, in, od, 1]
         # reduce sum along in axis (axis 1) results in [on, od, 1]      **Note: We don't want to reduce sum
         #                                                                       we want to apply routing
-        # 'each capsule in the [6 × 6] grid is sharing their
-        # weights with each other' (p.4, Hinton et. al)
+        # 'each capsule in the [6 × 6] grid is sharing their                    which is a sort of weighted
+        # weights with each other' (p.4, Hinton et. al)                         reduce sum
         # Each capsule belonging to the the same feature detector
         # shares the same weights.
         # TODO: split input_capsule_dimensions to reflect this
@@ -78,13 +81,15 @@ class CapsuleLayer(layers.Layer):
     @param input_data - input to the capsule layer. If the input is
         from another capsule layer, it will have shape (num_caps, caps_dims, 1)
     """
-    def call(self, input_data):
-        # TODO: implement call method for custom Keras layer
+    def call(self, input_data, **kwargs):
+        # TODO: get rid of extra dimensions of length 1
         # First multiply weight matrix and inputs to obtain prediction vectors
         u_hat = tf.matmul(self.capsule_weights, input_data)
 
         # apply routing algorithm on predictions
-        return self.routing(u_hat)
+        capsule_activations = self.routing(u_hat)
+
+        return capsule_activations
 
     """
     compute_output_shape method for custom Keras layer
@@ -119,20 +124,30 @@ class CapsuleLayer(layers.Layer):
             # in a vector with dimension [caps_dims]
             #
             # s dimensions should be [num_caps, caps_dims]
+            # TODO: figure out a more efficient way to do this, tf function
             s = [tf.reshape(tf.matmul(tf.reshape(c, [1, self.input_num_capsules]),
                                       tf.reshape(u_hat_j, [self.input_num_capsules, self.capsule_dimension])),
                             [self.capsule_dimension])
                  for c, u_hat_j in zip(coupling_coeff, u_hat)]
-            # s = tf.tensordot(coupling_coeff, u_hat, axes=2)
 
             # squash s
             v = squash(s)
 
             # update logits
-            # TODO
-            logits = logits + tf.matmul(u_hat, v)
+            #
+            # if the prediction vector and activation agree, increase the coupling
+            # between the input capsule and capsule j
+            #
+            # TODO: verify that we index i and j correctly throughout forward pass
+            # bij += u_hat_ij * vj
+            # bi += u_hat_i * vj
+            # TODO: tf function for this
+            delta_b = [tf.matmul(tf.reshape(u_hat_i, [self.input_num_capsules, self.capsule_dimension]),
+                                 tf.reshape(vj, [self.capsule_dimension, 1]))
+                       for u_hat_i, vj in zip(u_hat, v)]
+            logits += tf.squeeze(delta_b)
 
-        return v
+        return tf.reshape(v, [self.num_capsules, self.capsule_dimension, 1])
 
 
 """
