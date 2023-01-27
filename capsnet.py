@@ -44,7 +44,7 @@ class CapsuleLayer(layers.Layer):
         # we want to create a weight matrix such that multiplying the input by the matrix
         # will give us the activations of the current layer capsules of shape
         # (1, caps_dims, num_caps)
-        # TODO: determine the shape of the weight matrix that allows for easy multiplication
+        #
         # scratch notes:
         # for each connection between an input capsule xi with vector shape [id, 1]
         # and an output capsule yj with shape [od, 1] we need a weight matrix Wij
@@ -64,11 +64,11 @@ class CapsuleLayer(layers.Layer):
         self.input_num_capsules = input_shape[1]
         self.input_capsule_dimension = input_shape[2]
 
-        self.weights = self.add_weight(name='weights',
-                                       shape=(self.num_capsules, self.input_num_capsules,
-                                              self.capsule_dimension, self.input_capsule_dimension),
-                                       initializer=weight_initializer,
-                                       trainable=True)
+        self.capsule_weights = self.add_weight(name='capsule_weights',
+                                               shape=(self.num_capsules, self.input_num_capsules,
+                                                      self.capsule_dimension, self.input_capsule_dimension),
+                                               initializer=initializers.initializers_v1.RandomNormal,
+                                               trainable=True)
 
         super(CapsuleLayer, self).build(input_shape)
 
@@ -80,10 +80,10 @@ class CapsuleLayer(layers.Layer):
     """
     def call(self, input_data):
         # TODO: implement call method for custom Keras layer
-        # First multiply weight matrix and inputs
-        u_hat = tf.matmul(self.weights, input_data)
+        # First multiply weight matrix and inputs to obtain prediction vectors
+        u_hat = tf.matmul(self.capsule_weights, input_data)
 
-        # apply routing algorithm
+        # apply routing algorithm on predictions
         return self.routing(u_hat)
 
     """
@@ -95,23 +95,42 @@ class CapsuleLayer(layers.Layer):
 
     """
     routing algorithm described on p.3 (Procedure 1)
+    
+    @param u_hat - prediction vectors of layer i to layer j
+        with shape (num_caps, in_num_caps, caps_dim, 1)
     """
-    def routing(self, inputs):
-        logits = tf.zeros(self.input_num_capsules)
+    def routing(self, u_hat):
+        # one coupling logit for each capsule connection
+        logits = tf.zeros([self.num_capsules, self.input_num_capsules])
 
         for r in range(self.num_routings):
-            # for all capsules i in input layer, calculate the softmax
+            # for all capsules i in input layer, calculate the softmax vector
             coupling_coeff = softmax(logits)
 
             # for all capsules j in current layer, calculate sj
-            # TODO: find axis
-            s = tf.reduce_sum(tf.matmul(coupling_coeff, inputs))
+            #
+            # sj = sum ( c_i * u_hat_i )
+            #
+            # we want the output shape to remain the same, simply scaling the
+            # prediction vectors by the coupling coefficients
+            #
+            # this means that for each logit[j] vector with dimension [in_num_caps]
+            # we multiply against the corresponding matrix u_hat[j] which results
+            # in a vector with dimension [caps_dims]
+            #
+            # s dimensions should be [num_caps, caps_dims]
+            s = [tf.reshape(tf.matmul(tf.reshape(c, [1, self.input_num_capsules]),
+                                      tf.reshape(u_hat_j, [self.input_num_capsules, self.capsule_dimension])),
+                            [self.capsule_dimension])
+                 for c, u_hat_j in zip(coupling_coeff, u_hat)]
+            # s = tf.tensordot(coupling_coeff, u_hat, axes=2)
 
             # squash s
             v = squash(s)
 
             # update logits
-            logits = logits + tf.matmul(inputs, v)
+            # TODO
+            logits = logits + tf.matmul(u_hat, v)
 
         return v
 
@@ -166,3 +185,10 @@ https://keras.io/api/layers/initializers/#creating-custom-initializers
 def weight_initializer(shape, dtype=None):
     initializer = initializers.initializers_v1.RandomNormal
     return initializer(shape, dtype)
+
+
+"""
+Notes + Resources:
+
+[1] https://www.tensorflow.org/api_docs/python/tf/transpose 
+"""
