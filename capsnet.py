@@ -79,10 +79,11 @@ class CapsuleLayer(layers.Layer):
     call method for custom Keras layer
     
     @param input_data - input to the capsule layer. If the input is
-        from another capsule layer, it will have shape (num_caps, caps_dims, 1)
+        from another capsule layer, it will have shape (in_num_caps, in_caps_dims, 1)
     """
     def call(self, input_data, **kwargs):
-        # TODO: get rid of extra dimensions of length 1
+        # TODO: get rid of extra dimensions of length 1, are they extra? see next TODO
+        # TODO: test batch training, input_data shape = (num_caps, caps_dims, batch_size)
         # First multiply weight matrix and inputs to obtain prediction vectors
         u_hat = tf.matmul(self.capsule_weights, input_data)
 
@@ -123,12 +124,11 @@ class CapsuleLayer(layers.Layer):
             # we multiply against the corresponding matrix u_hat[j] which results
             # in a vector with dimension [caps_dims]
             #
-            # s dimensions should be [num_caps, caps_dims]
+            # after summing across all i, s dimensions should be [num_caps, caps_dims]
             # TODO: figure out a more efficient way to do this, tf function
-            s = [tf.reshape(tf.matmul(tf.reshape(c, [1, self.input_num_capsules]),
-                                      tf.reshape(u_hat_j, [self.input_num_capsules, self.capsule_dimension])),
-                            [self.capsule_dimension])
-                 for c, u_hat_j in zip(coupling_coeff, u_hat)]
+            # TODO: look into tf.multiply()
+            s = [tf.squeeze(tf.matmul(c, tf.squeeze(u_hat_j)))
+                 for c, u_hat_j in zip(tf.expand_dims(coupling_coeff, 1), u_hat)]
 
             # squash s
             v = squash(s)
@@ -141,13 +141,18 @@ class CapsuleLayer(layers.Layer):
             # TODO: verify that we index i and j correctly throughout forward pass
             # bij += u_hat_ij * vj
             # bi += u_hat_i * vj
-            # TODO: tf function for this
-            delta_b = [tf.matmul(tf.reshape(u_hat_i, [self.input_num_capsules, self.capsule_dimension]),
-                                 tf.reshape(vj, [self.capsule_dimension, 1]))
-                       for u_hat_i, vj in zip(u_hat, v)]
-            logits += tf.squeeze(delta_b)
+            # squeeze and expand_dims to get correct shapes for matmul
+            # u_hat_i dimensions: [in_num_caps, caps_dims, 1] -> [in_num_caps, caps_dims]
+            # v dimensions: [caps_dims] -> [caps_dims, 1]
+            # u_hat_i * v dimensions: [in_num_caps, 1]
+            # delta_b dimensions: [num_caps, in_num_caps, 1] -> [num_caps, in_num_caps]
+            # TODO: tf function for this, tf.multiply()??
+            delta_b = [tf.squeeze(tf.matmul(tf.squeeze(u_hat_i), vj))
+                       for u_hat_i, vj in zip(u_hat, tf.expand_dims(v, -1))]
+            logits += delta_b
 
-        return tf.reshape(v, [self.num_capsules, self.capsule_dimension, 1])
+        # add back dimension required for weight matmul and return activations
+        return tf.expand_dims(v, -1)
 
 
 """
