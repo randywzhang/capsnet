@@ -13,11 +13,27 @@ implementation works well and that dynamic routing helps.'
     - Hinton, Sabour, Frosst
 """
 
-# TODO: testing suite
-
 import keras.backend as K
 from keras import initializers, layers
 import tensorflow as tf
+
+"""
+Primary Capsule Layer doesn't route between previous layer so
+we just need to reshape a layer into capsules.
+
+The paper uses capsules for CV so we reshape a convolutional
+layer.
+
+@param num_channels - the number of unique capsule weights, used to
+    calculate num_capsules. If reshaping a conv2D layer, 
+    num_capsules = num_channels * shape[0] * shape[1] where shape is
+    conv2D_output.shape
+@param layer_to_shape - contains conv2D metadata as tuple (kernel, stride, padding)
+"""
+def PrimaryCapsuleLayer(inputs, capsule_dimension, num_channels, layer_to_shape):
+    # TODO: shape the first capsule layer
+    # TODO [REACH]: shape the first capsule layer for an arbitrary layer
+    pass
 
 """
 Keras customized layer
@@ -39,7 +55,6 @@ class CapsuleLayer(layers.Layer):
     build method for custom Keras layer
     """
     def build(self, input_shape):
-        # TODO: figure out how to attach to non-capsule layer
         # build must support linking to both capsule and non capsule layers
         # if input_shape is 2-D (vector.shape = (1, x)) we need to add a 3rd dimension
         #
@@ -198,17 +213,27 @@ def margin_loss(vk, tk):
 
 
 """
-Custom weight initializer
+derivative of margin loss for back propagation
+"""
+def margin_loss_dx(x, y):
+    pass
 
-https://keras.io/api/layers/initializers/#creating-custom-initializers
+
+"""
+activation derivatives
+"""
+def reLu_prime(a):
+    return a > 0
+
+
+def sigmoid_prime(a):
+    return tf.exp(-a) / tf.square((1 + tf.exp(-a)))
+
+
+"""
+Custom weight initializers
 """
 def weight_initializer(shape, dtype=None):
+    # TODO: https://keras.io/api/layers/initializers/#creating-custom-initializers
     initializer = initializers.initializers_v1.RandomNormal
     return initializer(shape, dtype)
-
-
-"""
-Notes + Resources:
-
-[1] https://www.tensorflow.org/api_docs/python/tf/transpose 
-"""
